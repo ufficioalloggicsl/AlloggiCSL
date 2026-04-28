@@ -7,7 +7,7 @@ import io
 # Configurazione della pagina
 st.set_page_config(page_title="Portale Alloggi Professionale", layout="centered")
 
-st.title("🏨 Modulo Richiesta Alloggio Online")
+st.title("Richiesta Alloggio Capo San Lorenzo")
 st.markdown("---")
 
 # Inizializziamo un database in memoria per la sessione corrente
