@@ -2,66 +2,82 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+import io
 
 # Configurazione della pagina
-st.set_page_config(page_title="Portale Alloggi", layout="centered")
+st.set_page_config(page_title="Portale Alloggi Professionale", layout="centered")
 
-st.title("🏨 Richiesta Alloggio Online")
-st.write("Compila il modulo per inviare la tua richiesta.")
+st.title("🏨 Sistema Richiesta Alloggio")
+st.info("Nota: I dati salvati sono temporanei sul server. Scarica l'Excel periodicamente.")
+
+# Inizializziamo il database in memoria se non esiste nel server
+if 'db_access' not in st.session_state:
+    st.session_state['db_access'] = pd.DataFrame()
 
 # --- FORM DI INSERIMENTO ---
 with st.form("modulo_alloggio", clear_on_submit=True):
-    st.subheader("Dati Personali")
+    st.subheader("Dati Anagrafici")
     grado = st.text_input("Grado")
     cognome = st.text_input("Cognome").upper()
     nome = st.text_input("Nome").capitalize()
     cf = st.text_input("Codice Fiscale").upper()
-    email = st.text_input("Email")
-
+    
     st.subheader("Dettagli Soggiorno")
-    col1, col2 = st.columns(2)
-    with col1:
-        turno = st.selectbox("Seleziona Turno", ["1", "2", "3", "4", "5", "6"])
-        persone = st.number_input("Numero Persone", min_value=1, step=1)
-    with col2:
-        data_arr = st.date_input("Data Arrivo")
-        data_par = st.date_input("Data Partenza")
-
-    st.subheader("Documentazione")
+    turno = st.selectbox("Turno", ["1", "2", "3", "4", "5", "6"])
+    data_arr = st.date_input("Data Arrivo")
+    data_par = st.date_input("Data Partenza")
+    
+    st.subheader("Documenti")
     file_pdf = st.file_uploader("Carica Documento PDF", type="pdf")
 
-    # Tasto di invio
     submit = st.form_submit_button("INVIA RICHIESTA")
 
 if submit:
     if not cognome or not cf or not file_pdf:
-        st.error("Per favore, compila i campi obbligatori e carica il PDF!")
+        st.error("Errore: Cognome, CF e PDF sono obbligatori!")
     else:
-        # Creazione cartella per i PDF (sul server)
-        cartella_dest = f"DOCUMENTI/{cognome}_{nome}"
-        if not os.path.exists(cartella_dest):
-            os.makedirs(cartella_dest)
-        
-        # Salvataggio del file PDF
-        percorso_pdf = os.path.join(cartella_dest, file_pdf.name)
-        with open(percorso_pdf, "wb") as f:
-            f.write(file_pdf.getbuffer())
-
-        # Salvataggio dati in Excel
-        nuovi_dati = {
-            "Data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "Grado": grado, "Cognome": cognome, "Nome": nome, "CF": cf,
-            "Turno": turno, "Persone": persone, 
-            "Arrivo": str(data_arr), "Partenza": str(data_par),
-            "File": percorso_pdf
+        # 1. Prepariamo i dati
+        nuova_richiesta = {
+            "Data Invio": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "Grado": grado,
+            "Cognome": cognome,
+            "Nome": nome,
+            "CF": cf,
+            "Turno": turno,
+            "Arrivo": str(data_arr),
+            "Partenza": str(data_par),
+            "Nome File": file_pdf.name
         }
-        
-        file_excel = "database_web.xlsx"
+
+        # 2. Salvataggio su file Excel fisico (nel server)
+        file_excel = "database_richieste.xlsx"
         if os.path.exists(file_excel):
-            df = pd.read_excel(file_excel)
-            df = pd.concat([df, pd.DataFrame([nuovi_dati])], ignore_index=True)
+            df_esistente = pd.read_excel(file_excel)
+            df_finale = pd.concat([df_esistente, pd.DataFrame([nuova_richiesta])], ignore_index=True)
         else:
-            df = pd.DataFrame([nuovi_dati])
+            df_finale = pd.DataFrame([nuova_richiesta])
         
-        df.to_excel(file_excel, index=False)
-        st.success(f"Grazie {nome}! La tua richiesta è stata registrata con successo.")
+        df_finale.to_excel(file_excel, index=False)
+        
+        st.success(f"✅ Richiesta inviata correttamente per {cognome} {nome}!")
+
+# --- SEZIONE AMMINISTRATORE (PER SCARICARE I DATI) ---
+st.divider()
+st.subheader("📥 Area Gestione (Solo per te)")
+
+if os.path.exists("database_richieste.xlsx"):
+    df_da_scaricare = pd.read_excel("database_richieste.xlsx")
+    
+    # Bottone per scaricare l'Excel
+    towrite = io.BytesIO()
+    df_da_scaricare.to_excel(towrite, index=False, engine='openpyxl')
+    towrite.seek(0)
+    
+    st.download_button(
+        label="📊 SCARICA DATABASE EXCEL",
+        data=towrite,
+        file_name=f"richieste_alloggio_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.ms-excel"
+    )
+else:
+    st.write("Nessun dato ancora salvato.")
