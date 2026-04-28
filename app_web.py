@@ -4,97 +4,82 @@ import os
 from datetime import datetime
 import io
 
-# Configurazione della pagina (Titolo che appare nella scheda del browser)
-st.set_page_config(page_title="Portale Richiesta Alloggio", layout="centered")
+# Configurazione della pagina
+st.set_page_config(page_title="Portale Alloggi Professionale", layout="centered")
 
 st.title("🏨 Modulo Richiesta Alloggio Online")
 st.markdown("---")
 
+# Inizializziamo un database in memoria per la sessione corrente
+if 'richieste' not in st.session_state:
+    st.session_state['richieste'] = []
+
 # --- FORM DI INSERIMENTO ---
-# Usiamo 'clear_on_submit=True' così il modulo si svuota dopo l'invio
 with st.form("modulo_alloggio", clear_on_submit=True):
-    
     st.subheader("👤 Dati Anagrafici")
-    grado = st.text_input("Grado (es. Capitano, Maresciallo...)")
+    grado = st.text_input("Grado")
     cognome = st.text_input("Cognome").upper()
     nome = st.text_input("Nome").capitalize()
-    cf = st.text_input("Codice Fiscale (16 caratteri)").upper()
+    cf = st.text_input("Codice Fiscale").upper()
     email = st.text_input("Indirizzo Email")
 
-    st.markdown("---")
-    st.subheader("📅 Dettagli del Soggiorno")
-    
+    st.subheader("📅 Dettagli Soggiorno")
     col1, col2 = st.columns(2)
     with col1:
-        turno = st.selectbox("Seleziona Turno", ["1", "2", "3", "4", "5", "6"])
-        # REINSERITO: Numero di persone
-        persone = st.number_input("Numero di persone", min_value=1, max_value=20, value=1, step=1)
-    
+        turno = st.selectbox("Turno", ["1", "2", "3", "4", "5", "6"])
+        persone = st.number_input("Persone", min_value=1, value=1)
     with col2:
-        data_arr = st.date_input("Data Arrivo", format="DD/MM/YYYY")
-        data_par = st.date_input("Data Partenza", format="DD/MM/YYYY")
+        data_arr = st.date_input("Data Arrivo")
+        data_par = st.date_input("Data Partenza")
 
-    st.markdown("---")
     st.subheader("📄 Documentazione")
-    file_pdf = st.file_uploader("Carica Documento d'Identità (Solo formato PDF)", type="pdf")
+    file_pdf = st.file_uploader("Carica PDF", type="pdf")
 
-    # Tasto di invio professionale
     submit = st.form_submit_button("INVIA RICHIESTA", use_container_width=True)
 
-# --- LOGICA DI SALVATAGGIO ---
 if submit:
-    # Controllo che i campi fondamentali siano pieni
     if not cognome or not cf or not file_pdf:
-        st.error("⚠️ Errore: Cognome, Codice Fiscale e Documento PDF sono obbligatori!")
+        st.error("⚠️ Cognome, CF e PDF sono obbligatori!")
     else:
-        # Preparazione della riga dati
+        # Leggiamo il contenuto del PDF per poterlo "ricordare"
+        pdf_bytes = file_pdf.getvalue()
+        
         nuova_riga = {
-            "Data/Ora Invio": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "Grado": grado,
-            "Cognome": cognome,
-            "Nome": nome,
-            "Codice Fiscale": cf,
-            "Email": email,
-            "Turno": turno,
-            "Numero Persone": persone,
-            "Data Arrivo": data_arr.strftime("%d/%m/%Y"),
-            "Data Partenza": data_par.strftime("%d/%m/%Y"),
-            "Nome Documento": file_pdf.name
+            "Data Invio": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "Grado": grado, "Cognome": cognome, "Nome": nome, "CF": cf,
+            "Email": email, "Turno": turno, "Persone": persone,
+            "Arrivo": data_arr.strftime("%d/%m/%Y"),
+            "Partenza": data_par.strftime("%d/%m/%Y"),
+            "Nome File": file_pdf.name,
+            "PDF_Data": pdf_bytes  # Salviamo il file in memoria
         }
-
-        # Salvataggio temporaneo nel file Excel del server
-        file_excel = "database_alloggi.xlsx"
-        if os.path.exists(file_excel):
-            df_esistente = pd.read_excel(file_excel)
-            df_finale = pd.concat([df_esistente, pd.DataFrame([nuova_riga])], ignore_index=True)
-        else:
-            df_finale = pd.DataFrame([nuova_riga])
         
-        df_finale.to_excel(file_excel, index=False)
-        
-        st.success(f"✅ Grazie {nome}! La richiesta è stata inviata correttamente.")
-        st.balloons() # Un piccolo tocco di allegria al successo!
+        st.session_state['richieste'].append(nuova_riga)
+        st.success(f"✅ Richiesta di {cognome} inviata!")
 
-# --- AREA GESTIONE (VISIBILE SOLO IN FONDO ALLA PAGINA) ---
+# --- AREA GESTIONE (AREA AMMINISTRATORE) ---
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.divider()
-st.subheader("📥 Area Amministratore")
-st.info("Da qui puoi scaricare l'elenco aggiornato in formato Excel sul tuo computer.")
+st.subheader("📥 Area Gestione Richieste")
 
-if os.path.exists("database_alloggi.xlsx"):
-    df_scarico = pd.read_excel("database_alloggi.xlsx")
+if st.session_state['richieste']:
+    # Creiamo un DataFrame per l'Excel (senza i dati pesanti del PDF)
+    df_excel = pd.DataFrame(st.session_state['richieste']).drop(columns=['PDF_Data'])
     
-    # Preparazione del file per il download (in memoria)
+    # Bottone Download Excel
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df_scarico.to_excel(writer, index=False)
-    
-    st.download_button(
-        label="📥 SCARICA ELENCO RICHIESTE (EXCEL)",
-        data=buffer.getvalue(),
-        file_name=f"database_richieste_{datetime.now().strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.ms-excel",
-        help="Clicca per scaricare l'elenco completo delle richieste salvate finora."
-    )
+    df_excel.to_excel(buffer, index=False, engine='openpyxl')
+    st.download_button("📊 Scarica Tabella Excel", buffer.getvalue(), "richieste.xlsx", "application/vnd.ms-excel")
+
+    # VISUALIZZAZIONE E DOWNLOAD DEI PDF CARICATI
+    st.write("### 📂 Documenti PDF da scaricare:")
+    for idx, r in enumerate(st.session_state['richieste']):
+        st.download_button(
+            label=f"📄 Scarica PDF di {r['Cognome']} ({r['Nome File']})",
+            data=r['PDF_Data'],
+            file_name=f"DOC_{r['CF']}.pdf",
+            mime="application/pdf",
+            key=f"btn_{idx}"
+        )
 else:
-    st.warning("Nessuna richiesta ancora registrata.")
+    st.info("In attesa di nuove richieste...")
